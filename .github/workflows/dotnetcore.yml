@@ -28,14 +28,12 @@ jobs:
       run: dotnet restore
     - name: Build
       run: dotnet build --configuration Release --no-restore
-#    - name: Test
-#      run: dotnet test --no-restore --verbosity normal
     - name: Upload DLL to release
       uses: softprops/action-gh-release@v1
-      if: steps.tag.outputs.status == 'success' && !cancelled()
+#       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
+        tag_name: latest
         body_path: release.txt
         files: /home/runner/work/jellyfin-plugin-douban/jellyfin-plugin-douban/Jellyfin.Plugin.Douban/bin/Release/netstandard2.1/Jellyfin.Plugin.Douban.dll
