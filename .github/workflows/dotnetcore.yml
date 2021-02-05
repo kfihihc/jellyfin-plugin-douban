@@ -29,8 +29,8 @@ jobs:
     - name: Build
       run: dotnet build --configuration Release --no-restore
     - name: Get current date
-        id: date
-        run: echo "name=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+      id: date
+      run: echo "name=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
     - name: Upload DLL to release
       uses: softprops/action-gh-release@v1
 #       if: steps.tag.outputs.status == 'success' && !cancelled()
