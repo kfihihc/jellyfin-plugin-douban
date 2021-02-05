@@ -28,12 +28,14 @@ jobs:
       run: dotnet restore
     - name: Build
       run: dotnet build --configuration Release --no-restore
+    - name: Get current date
+        id: date
+        run: echo "name=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
     - name: Upload DLL to release
       uses: softprops/action-gh-release@v1
 #       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: latest
-#         body_path: release.txt
+        tag_name: latest_${{ steps.date.outputs.date }}
         files: /home/runner/work/jellyfin-plugin-douban/jellyfin-plugin-douban/Jellyfin.Plugin.Douban/bin/Release/netstandard2.1/Jellyfin.Plugin.Douban.dll
