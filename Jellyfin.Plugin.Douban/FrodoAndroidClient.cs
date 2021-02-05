@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
+using MediaBrowser.Common.Net;
 using MediaBrowser.Model.Serialization;
 using Microsoft.Extensions.Logging;
 
@@ -16,7 +17,7 @@ namespace Jellyfin.Plugin.Douban
     /// <summary>
     /// Frodo is the secondary domain of API used by Douban APP.
     /// </summary>
-    public sealed class FrodoClient
+    public sealed class FrodoAndroidClient : IDoubanClient
     {
 
         private const string BaseDoubanUrl = "https://frodo.douban.com";
@@ -31,54 +32,39 @@ namespace Jellyfin.Plugin.Douban
             + "product/shamu vendor/OPPO model/OPPO R11 Plus"
             + "rom/android  network/wifi  platform/mobile nd/1";
 
-        private readonly IHttpClientFactory _httpClientFactory;
-        private readonly ILogger<FrodoClient> _logger;
+        private static readonly SemaphoreSlim _locker = new SemaphoreSlim(1, 1);
+
+        private readonly Random _random = new Random();
+
+        private readonly IHttpClient _httpClient;
         private readonly IJsonSerializer _jsonSerializer;
-        public FrodoClient(IHttpClientFactory httpClientFactory, IJsonSerializer jsonSerializer,
-            ILogger<FrodoClient> logger)
+        private readonly ILogger _logger;
+
+        public FrodoAndroidClient(IHttpClient httpClient, IJsonSerializer jsonSerializer,
+            ILogger logger)
         {
-            this._httpClientFactory = httpClientFactory;
+            this._httpClient = httpClient;
             this._jsonSerializer = jsonSerializer;
             this._logger = logger;
         }
 
         /// <summary>
-        /// Gets one movie item by doubanID.
+        /// Gets one movie or tv item by doubanID.
         /// </summary>
         /// <param name="doubanID">The subject ID in Douban.</param>
+        /// <param name="type">Subject type.</param>
         /// <param name="cancellationToken">Used to cancel the request.</param>
         /// <returns>The subject of one item.</returns>
-        public async Task<Response.Subject> GetMovieItem(string doubanID, CancellationToken cancellationToken)
+        public async Task<Response.Subject> GetSubject(string doubanID, MediaType type, CancellationToken cancellationToken)
         {
-            _logger.LogInformation($"Start to GetMovieItem by Id: {doubanID}");
+            _logger.LogInformation($"Start to GetSubject by Id: {doubanID}");
 
-            const string pathPrefix = "/api/v2/movie";
-            string path = $"{pathPrefix}/{doubanID}";
+            string path = $"/api/v2/{type:G}/{doubanID}";
             Dictionary<string, string> queryParams = new Dictionary<string, string>();
             var contentStream = await GetResponse(path, queryParams, cancellationToken);
             Response.Subject subject = await _jsonSerializer.DeserializeFromStreamAsync<Response.Subject>(contentStream);
 
-            _logger.LogTrace($"Finish doing GetMovieItem by Id: {doubanID}");
-            return subject;
-        }
-
-        /// <summary>
-        /// Gets one TV item by doubanID.
-        /// </summary>
-        /// <param name="doubanID">The subject ID in Douban.</param>
-        /// <param name="cancellationToken">Used to cancel the request.</param>
-        /// <returns>The subject of one item.</returns>
-        public async Task<Response.Subject> GetTvItem(string doubanID, CancellationToken cancellationToken)
-        {
-            _logger.LogInformation($"Start to GetTvItem by Id: {doubanID}");
-
-            const string pathPrefix = "/api/v2/tv";
-            string path = $"{pathPrefix}/{doubanID}";
-            Dictionary<string, string> queryParams = new Dictionary<string, string>();
-            var contentStream = await GetResponse(path, queryParams, cancellationToken);
-            Response.Subject subject = await _jsonSerializer.DeserializeFromStreamAsync<Response.Subject>(contentStream);
-
-            _logger.LogTrace($"Finish doing GetTvItem by Id: {doubanID}");
+            _logger.LogTrace($"Finish doing GetSubject by Id: {doubanID}");
             return subject;
         }
 
@@ -95,19 +81,31 @@ namespace Jellyfin.Plugin.Douban
 
         public async Task<Response.SearchResult> Search(string name, int count, CancellationToken cancellationToken)
         {
-            _logger.LogInformation($"Start to Search by name: {name}, count: {count}");
-
-            const string path = "/api/v2/search/movie";
-            Dictionary<string, string> queryParams = new Dictionary<string, string>
+            await _locker.WaitAsync();
+            try
             {
-                { "q", name },
-                { "count", count.ToString() }
-            };
-            var contentStream = await GetResponse(path, queryParams, cancellationToken);
-            Response.SearchResult result = await _jsonSerializer.DeserializeFromStreamAsync<Response.SearchResult>(contentStream);
+                _logger.LogInformation($"Start to Search by name: {name}, count: {count}");
 
-            _logger.LogTrace($"Finish doing Search by name: {name}, count: {count}");
-            return result;
+                const string path = "/api/v2/search/movie";
+                Dictionary<string, string> queryParams = new Dictionary<string, string>
+                {
+                    { "q", name },
+                    { "count", count.ToString() }
+                };
+                var contentStream = await GetResponse(path, queryParams, cancellationToken);
+                Response.SearchResult result = await _jsonSerializer.DeserializeFromStreamAsync<Response.SearchResult>(contentStream);
+
+                _logger.LogTrace($"Finish doing Search by name: {name}, count: {count}");
+                
+                await Task.Delay(_random.Next(4000, 10000));
+
+                return result;
+            }
+            finally
+            {
+                _locker.Release();
+            }
+            
         }
 
         /// <summary>
@@ -145,11 +143,7 @@ namespace Jellyfin.Plugin.Douban
         {
             _logger.LogTrace($"Start to request path: {path}");
 
-            if (cancellationToken.IsCancellationRequested)
-            {
-                _logger.LogInformation($"Request for path {path} canceled");
-                cancellationToken.ThrowIfCancellationRequested();
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
             // Sign for the parameters.
             string ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
@@ -163,23 +157,72 @@ namespace Jellyfin.Plugin.Douban
             _logger.LogInformation($"Frodo request URL: {url}");
 
             // Send request to Frodo API and get response.
+            // using HttpResponseMessage response = await GetAsync(url, cancellationToken);
+            // using Stream content = await response.Content.ReadAsStreamAsync();
 
+            using var response = await GetResponse(url, cancellationToken);
+            var content = response.Content;
 
-            var response = await GetAsync(url, cancellationToken);
-            Stream content = await response.Content.ReadAsStreamAsync();
-
-            _logger.LogTrace($"Finish to request path: {path}");
+            _logger.LogTrace($"Finish doing request path: {path}");
             return content;
         }
 
-        private async Task<HttpResponseMessage> GetAsync(string url, CancellationToken cancellationToken)
+
+        /// <summary>
+        /// Simply gets the response by HTTP without any other options.
+        /// </summary>
+        /// <param name="url">Request URL.</param>
+        /// <param name="cancellationToken">Used to cancel the request.</param>
+        /// <returns>Simple Http Response.</returns>
+        public async Task<HttpResponseMessage> GetAsync(string url, CancellationToken cancellationToken)
         {
+            
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // var httpClient = _httpClientFactory.CreateClient();
+            // httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", UserAgent);
+
+            // HttpResponseMessage response = await httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            //response.EnsureSuccessStatusCode();
+
+            // return response;
+            return null;
+        }
+
+        // TODO(Libitum): Delete this after upgrade new version of Jellyfin.
+        public async Task<HttpResponseInfo> GetResponse(string url, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            /*
+             * use this in new version of Jellyfin.
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", UserAgent);
 
-            var response = await httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            HttpResponseMessage response = await httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
+            return new HttpResponseInfo()
+            {
+                Content = await response.Content.ReadAsStreamAsync()
+            };
+            */
+            return await GetResponseV1(url, UserAgent, cancellationToken);
+        }
+
+        // TODO(Libitum): Delete this after upgrade new version of Jellyfin.
+        public async Task<HttpResponseInfo> GetResponseV1(string url, string userAgent, CancellationToken token)
+        {
+            var options = new HttpRequestOptions
+            {
+                Url = url,
+                CancellationToken = token,
+                BufferContent = true,
+                UserAgent = userAgent,
+            };
+
+            var response = await _httpClient.GetResponse(options).ConfigureAwait(false);
             return response;
         }
+
     }
 }

@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
@@ -32,19 +33,22 @@ namespace Jellyfin.Plugin.Douban
         public async Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item,
             CancellationToken cancellationToken)
         {
+            _logger.LogInformation($"[DOUBAN] GetImages for item: {item.Name}");
+
             var list = new List<RemoteImageInfo>();
             var sid = item.GetProviderId(ProviderID);
             if (string.IsNullOrWhiteSpace(sid))
             {
-                _logger.LogWarning($"[DOUBAN WARN] Got images failed because the sid of \"{item.Name}\" is empty!");
+                _logger.LogWarning($"[DOUBAN] Got images failed because the sid of \"{item.Name}\" is empty!");
                 return list;
             }
 
             var primaryList = await GetPrimary(sid, item is Movie ? "movie" : "tv", cancellationToken);
-            var backdropList = await GetBackdrop(sid, cancellationToken);
-
             list.AddRange(primaryList);
-            list.AddRange(backdropList);
+
+            // TODO(Libitum): Add backdrop back.
+            // var backdropList = await GetBackdrop(sid, cancellationToken);
+            // list.AddRange(backdropList);
 
             return list;
         }
@@ -67,7 +71,7 @@ namespace Jellyfin.Plugin.Douban
             CancellationToken cancellationToken)
         {
             var list = new List<RemoteImageInfo>();
-            var item = await GetFrodoSubject(sid, type, cancellationToken);
+            var item = await _doubanClient.GetSubject(sid, Enum.Parse<MediaType>(type), cancellationToken);
             list.Add(new RemoteImageInfo
             {
                 ProviderName = Name,
@@ -83,7 +87,14 @@ namespace Jellyfin.Plugin.Douban
             var url = string.Format("https://movie.douban.com/subject/{0}/photos?" +
                                     "type=W&start=0&sortby=size&size=a&subtype=a", sid);
 
-            String content = await _doubanAccessor.GetResponseWithDelay(url, cancellationToken);
+            // var response = await _doubanClient.GetAsync(url, cancellationToken);
+            // var stream = await response.Content.ReadAsStreamAsync();
+            // string content = new StreamReader(stream).ReadToEnd();
+
+            var response = await _doubanClient.GetResponse(url, cancellationToken);
+            string content = new StreamReader(response.Content).ReadToEnd();
+
+
             const String pattern = @"(?s)data-id=""(\d+)"".*?class=""prop"">\n\s*(\d+)x(\d+)";
             Match match = Regex.Match(content, pattern);
 
