@@ -37,5 +37,4 @@ jobs:
       with:
         tag_name: latest-20200301
 #         body_path: release.txt
-        tag_name: latest_${{ steps.date.outputs.date }}
         files: /home/runner/work/jellyfin-plugin-douban/jellyfin-plugin-douban/Jellyfin.Plugin.Douban/bin/Release/netstandard2.1/Jellyfin.Plugin.Douban.dll
