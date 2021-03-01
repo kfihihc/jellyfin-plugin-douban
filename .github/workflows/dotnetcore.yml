@@ -35,6 +35,6 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: latest-20200301
+        tag_name: latest-20200301-2
 #         body_path: release.txt
-        files: /home/runner/work/jellyfin-plugin-douban/jellyfin-plugin-douban/Jellyfin.Plugin.Douban.Tests/bin/Release/net5.0/Jellyfin.Plugin.Douban.Tests.dll
+        files: /home/runner/work/jellyfin-plugin-douban/jellyfin-plugin-douban/Jellyfin.Plugin.Douban/bin/Release/net5.0/Jellyfin.Plugin.Douban.dll
