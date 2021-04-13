@@ -32,7 +32,7 @@ jobs:
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v2.2.3
       with:
-        name: latest-$(date +'%Y-%m-%d')"
+        name: Jellyfin.Plugin.Douban.dll
         # A file, directory or wildcard pattern that describes what to upload
         path: /home/runner/work/jellyfin-plugin-douban/jellyfin-plugin-douban/Jellyfin.Plugin.Douban/bin/Release/net5.0/Jellyfin.Plugin.Douban.dll
     
